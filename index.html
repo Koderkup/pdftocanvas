@@ -90,28 +90,39 @@
     const totalPagesEl = document.getElementById('total-pages');
     const pageInput = document.getElementById('page-input');
     const searchResultEl = document.getElementById('search-result');
+    
+    function convertGitHubBlobToRaw(blobUrl) {
+    const match = blobUrl.match(/^https:\/\/github\.com\/([^\/]+)\/([^\/]+)\/blob\/([^\/]+)\/(.+)$/);
+    if (!match) return blobUrl;
+    const [, user, repo, branch, path] = match;
+    return `https://raw.githubusercontent.com/${user}/${repo}/${branch}/${path}`;
+}
 
     async function loadFromURL() {
-      let urlInput = document.getElementById('pdf-url').value.trim();
-      if (!urlInput) return alert("Укажи ссылку на PDF-файл");
+  let urlInput = document.getElementById('pdf-url').value.trim();
+  if (!urlInput) return alert("Укажи ссылку на PDF-файл");
 
-      // Поддержка Google Drive: вытаскиваем file ID
-      const match = urlInput.match(/\/d\/(.+?)\//);
-      if (match) {
-        urlInput = `https://drive.google.com/uc?export=download&id=${match[1]}`;
-      }
+  // Поддержка Google Drive: вытаскиваем file ID
+  const match = urlInput.match(/\/d\/(.+?)\//);
+  if (match) {
+    urlInput = `https://drive.google.com/uc?export=download&id=${match[1]}`;
+  }
 
-      try {
-        const loading = await pdfjsLib.getDocument(urlInput).promise;
-        pdfDoc = loading;
-        totalPages = pdfDoc.numPages;
-        totalPagesEl.textContent = totalPages;
-        goToPage(1);
-      } catch (err) {
-        alert("Не удалось загрузить PDF. Проверь ссылку.");
-        console.error(err);
-      }
-    }
+  // Поддержка GitHub blob-ссылок → RAW
+  urlInput = convertGitHubBlobToRaw(urlInput);
+
+  try {
+    const loading = await pdfjsLib.getDocument(urlInput).promise;
+    pdfDoc = loading;
+    totalPages = pdfDoc.numPages;
+    totalPagesEl.textContent = totalPages;
+    goToPage(1);
+  } catch (err) {
+    alert("Не удалось загрузить PDF. Проверь ссылку.");
+    console.error(err);
+  }
+}
+
 
     async function goToPage(pageNumber) {
       if (!pdfDoc || pageNumber < 1 || pageNumber > totalPages) return;
