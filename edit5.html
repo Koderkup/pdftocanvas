@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8" />
-  <title>PDF Pro Viewer (автозагрузка по ссылке)</title>
+  <title>PDF Pro Viewer — фикс ошибок</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <style>
     body { font-family: sans-serif; background: #f4f4f4; text-align: center; padding: 1rem; }
@@ -15,28 +15,40 @@
 <body>
   <h2>📚 PDF PRO Просмотрщик</h2>
 
-  <input type="text" id="pdf-url" placeholder="Вставь ссылку на PDF (GitHub или Drive)" size="50" />
-  <button onclick="loadFromURL()">Загрузить PDF</button>
-  <button onclick="clearStoredURL()">🗑 Очистить сохранённую ссылку</button>
+  <!-- Загрузка по ссылке -->
+  <input type="text" id="pdf-url" placeholder="Ссылка на PDF (GitHub или Drive)" size="50" />
+  <button onclick="loadFromURL()">🔗 Загрузить PDF</button>
+  <button onclick="clearStoredURL()">🗑 Очистить ссылку</button>
 
+  <!-- Загрузка локального PDF -->
+  <input type="file" id="local-pdf" accept="application/pdf" />
+  <button onclick="loadLocalPDF()">📂 Открыть PDF с устройства</button>
+
+  <!-- Скачивание -->
+  <button onclick="downloadPDF()">💾 Скачать PDF</button>
+
+  <!-- Навигация -->
   <div class="controls">
     <button onclick="goToPage(currentPage - 1)">⬅ Назад</button>
-    <button onclick="goToPage(currentPage + 1)">Вперёд ➡</button>
+    <button onclick="goToPage(currentPage + 1)">➡ Вперёд</button>
     <input type="number" id="page-input" min="1" placeholder="Страница" />
     <button onclick="jumpToPage()">Перейти</button>
     <button onclick="zoomIn()">🔍+</button>
     <button onclick="zoomOut()">🔎-</button>
-    <button onclick="downloadImage()">💾 PNG</button>
+    <button onclick="downloadImage()">📷 PNG</button>
   </div>
 
   <div class="status">Страница: <span id="current-page">–</span> / <span id="total-pages">–</span></div>
 
+  <!-- Поиск -->
   <input type="text" id="search-text" placeholder="Поиск по тексту" />
   <button onclick="searchText()">🔎 Поиск</button>
   <div id="search-result"></div>
 
+  <!-- Canvas -->
   <canvas id="pdf-canvas"></canvas>
 
+  <!-- PDF.js -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.6.172/pdf.min.js"></script>
   <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc =
@@ -48,11 +60,7 @@
     let currentPage = 1;
     let totalPages = 0;
     let scale = 1.2;
-
-    const currentPageEl = document.getElementById("current-page");
-    const totalPagesEl = document.getElementById("total-pages");
-    const pageInput = document.getElementById("page-input");
-    const searchResultEl = document.getElementById("search-result");
+    let loadedPdfBytes = null;
 
     function convertGitHubBlobToRaw(url) {
       const m = url.match(/^https:\/\/github\.com\/([^\/]+)\/([^\/]+)\/blob\/([^\/]+)\/(.+)$/);
@@ -65,34 +73,57 @@
       let url = document.getElementById("pdf-url").value.trim();
       if (!url) return alert("❗ Укажи ссылку на PDF");
 
-      const driveMatch = url.match(/\/d\/(.+?)\//);
-      if (driveMatch) {
-        url = `https://drive.google.com/uc?export=download&id=${driveMatch[1]}`;
+      const match = url.match(/\/d\/(.+?)\//);
+      if (match) {
+        url = `https://drive.google.com/uc?export=download&id=${match[1]}`;
       }
-
       url = convertGitHubBlobToRaw(url);
-      localStorage.setItem("lastPDFUrl", url); // ✅ Сохраняем ссылку
+      localStorage.setItem("lastPDFUrl", url);
 
       try {
         const res = await fetch(url);
         const buffer = await res.arrayBuffer();
-        const bytes = new Uint8Array(buffer);
-        const doc = await pdfjsLib.getDocument(bytes).promise;
+        if (buffer.byteLength === 0) {
+          alert("⚠️ Файл по ссылке пустой или недоступен.");
+          return;
+        }
+        loadedPdfBytes = new Uint8Array(buffer);
+        const doc = await pdfjsLib.getDocument(loadedPdfBytes).promise;
         pdfDoc = doc;
         totalPages = doc.numPages;
-        totalPagesEl.textContent = totalPages;
+        document.getElementById("total-pages").textContent = totalPages;
         goToPage(1);
       } catch (e) {
-        alert("❌ Не удалось загрузить PDF");
+        alert("❌ Не удалось загрузить PDF.");
         console.error(e);
       }
     }
 
-    async function goToPage(num) {
-      if (!pdfDoc || num < 1 || num > totalPages) return;
-      currentPage = num;
-      currentPageEl.textContent = currentPage;
-      const page = await pdfDoc.getPage(num);
+    async function loadLocalPDF() {
+      const fileInput = document.getElementById("local-pdf");
+      const file = fileInput.files[0];
+      if (!file) return alert("❗ Вы не выбрали PDF-файл.");
+      console.log("Выбран файл:", file.name, file.size, "байт");
+
+      const buffer = await file.arrayBuffer();
+      if (buffer.byteLength === 0) {
+        alert("⚠️ Выбранный файл пустой.");
+        return;
+      }
+
+      loadedPdfBytes = new Uint8Array(buffer);
+      const doc = await pdfjsLib.getDocument(loadedPdfBytes).promise;
+      pdfDoc = doc;
+      totalPages = doc.numPages;
+      document.getElementById("total-pages").textContent = totalPages;
+      goToPage(1);
+    }
+
+    async function goToPage(n) {
+      if (!pdfDoc || n < 1 || n > totalPages) return;
+      currentPage = n;
+      document.getElementById("current-page").textContent = currentPage;
+      const page = await pdfDoc.getPage(currentPage);
       const viewport = page.getViewport({ scale });
       canvas.width = viewport.width;
       canvas.height = viewport.height;
@@ -100,8 +131,8 @@
     }
 
     function jumpToPage() {
-      const target = parseInt(pageInput.value);
-      if (!isNaN(target)) goToPage(target);
+      const p = parseInt(document.getElementById("page-input").value);
+      if (!isNaN(p)) goToPage(p);
     }
 
     function zoomIn() {
@@ -121,6 +152,20 @@
       link.click();
     }
 
+    function downloadPDF() {
+      if (!loadedPdfBytes || loadedPdfBytes.length === 0) {
+        alert("❌ PDF-файл не загружен — невозможно сохранить.");
+        return;
+      }
+      const blob = new Blob([loadedPdfBytes], { type: "application/pdf" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "downloaded.pdf";
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
     async function searchText() {
       if (!pdfDoc) return;
       const query = document.getElementById("search-text").value.trim().toLowerCase();
@@ -128,9 +173,8 @@
       const page = await pdfDoc.getPage(currentPage);
       const content = await page.getTextContent();
       const text = content.items.map(i => i.str).join(" ").toLowerCase();
-      searchResultEl.textContent = text.includes(query)
-        ? `✅ Найдено на странице ${currentPage}`
-        : `❌ Не найдено`;
+      document.getElementById("search-result").textContent =
+        text.includes(query) ? `✅ Найдено на странице ${currentPage}` : `❌ Не найдено`;
     }
 
     function clearStoredURL() {
