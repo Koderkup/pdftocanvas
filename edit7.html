@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <title>PDF Unicode Editor — DejaVu Sans</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: sans-serif; background: #f9f9f9; text-align: center; padding: 1rem; }
+    canvas { border: 1px solid #ccc; margin: 1rem auto; display: block; }
+    .controls, .editor {
+      margin: 1rem auto;
+      display: flex; flex-wrap: wrap;
+      justify-content: center; gap: 0.5rem; max-width: 800px;
+    }
+    input, button, textarea { font-size: 1rem; padding: 0.5rem; }
+    button:disabled { background: #ccc; cursor: not-allowed; }
+    .status { margin-top: 1rem; font-size: 1rem; color: #333; }
+  </style>
+</head>
+<body>
+
+<h2>📄 PDF Unicode Editor</h2>
+<input type="file" id="pdf-file" accept="application/pdf" />
+<button id="load-btn">📂 Загрузить PDF</button>
+
+<canvas id="pdf-canvas"></canvas>
+
+<div class="controls">
+  <button id="prev-page">⬅</button>
+  <button id="next-page">➡</button>
+  <input type="number" id="jump-input" min="1" placeholder="Страница" />
+  <button id="jump-btn">Перейти</button>
+  <button id="zoom-in">🔍+</button>
+  <button id="zoom-out">🔎-</button>
+</div>
+
+<div class="status">Страница: <span id="page-num">–</span> / <span id="page-count">–</span></div>
+
+<h3>✏️ Добавить текст</h3>
+<div class="editor">
+  <textarea id="text-input" placeholder="Введите текст — Привет 😊 أهلاً こんにちは" rows="3" cols="30"></textarea>
+  <input type="number" id="text-page" placeholder="Страница" min="1" />
+  <input type="number" id="text-x" placeholder="X позиция" min="0" />
+  <input type="number" id="text-y" placeholder="Y позиция" min="0" />
+</div>
+<button id="save-btn" disabled>💾 Сохранить PDF</button>
+
+<!-- JS-библиотеки -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.6.172/pdf.min.js"></script>
+<script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+<script src="https://unpkg.com/@pdf-lib/fontkit@0.0.4/dist/fontkit.umd.js"></script>
+
+<script>
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.6.172/pdf.worker.min.js";
+
+  const canvas = document.getElementById("pdf-canvas");
+  const ctx = canvas.getContext("2d");
+  let pdfDoc = null;
+  let originalFile = null;
+  let pageNum = 1;
+  let pageCount = 0;
+  let scale = 1.2;
+
+  async function renderPage(n) {
+    const page = await pdfDoc.getPage(n);
+    const viewport = page.getViewport({ scale });
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    await page.render({ canvasContext: ctx, viewport }).promise;
+    document.getElementById("page-num").textContent = n;
+  }
+
+  document.getElementById("load-btn").onclick = () => {
+    originalFile = document.getElementById("pdf-file").files[0];
+    if (!originalFile) return alert("⚠️ Выберите PDF-файл.");
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const bytes = new Uint8Array(reader.result);
+      pdfDoc = await pdfjsLib.getDocument({ data: bytes }).promise;
+      pageCount = pdfDoc.numPages;
+      pageNum = 1;
+      document.getElementById("page-count").textContent = pageCount;
+      await renderPage(pageNum);
+      document.getElementById("save-btn").disabled = false;
+    };
+    reader.readAsArrayBuffer(originalFile);
+  };
+
+  document.getElementById("prev-page").onclick = () => {
+    if (pageNum > 1) renderPage(--pageNum);
+  };
+  document.getElementById("next-page").onclick = () => {
+    if (pageNum < pageCount) renderPage(++pageNum);
+  };
+  document.getElementById("jump-btn").onclick = () => {
+    const val = parseInt(document.getElementById("jump-input").value);
+    if (val >= 1 && val <= pageCount) { pageNum = val; renderPage(val); }
+  };
+  document.getElementById("zoom-in").onclick = () => {
+    scale = Math.min(scale + 0.2, 3); renderPage(pageNum);
+  };
+  document.getElementById("zoom-out").onclick = () => {
+    scale = Math.max(scale - 0.2, 0.4); renderPage(pageNum);
+  };
+
+  document.getElementById("save-btn").onclick = () => {
+    if (!originalFile) return alert("📛 PDF не загружен.");
+    const text = document.getElementById("text-input").value.trim();
+    const page = parseInt(document.getElementById("text-page").value);
+    const x = parseInt(document.getElementById("text-x").value);
+    const y = parseInt(document.getElementById("text-y").value);
+    if (!text || isNaN(page) || isNaN(x) || isNaN(y)) {
+      return alert("⚠️ Заполните все поля.");
+    }
+
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        const pdfBytes = new Uint8Array(reader.result);
+        const doc = await PDFLib.PDFDocument.load(pdfBytes);
+        doc.registerFontkit(fontkit);
+
+        // Рабочий Unicode-шрифт: DejaVu Sans
+        const fontBytes = await fetch("https://cdn.jsdelivr.net/npm/dejavu-fonts-ttf@2.37/ttf/DejaVuSans.ttf")
+          .then(res => res.arrayBuffer());
+        const customFont = await doc.embedFont(fontBytes);
+
+        const pages = doc.getPages();
+        if (page < 1 || page > pages.length) {
+          return alert(`❌ В PDF всего ${pages.length} страниц.`);
+        }
+
+        pages[page - 1].drawText(text, {
+          x, y, font: customFont, size: 16, color: PDFLib.rgb(0, 0, 0)
+        });
+
+        const output = await doc.save();
+        const blob = new Blob([output], { type: 'application/pdf' });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = "unicode_text.pdf";
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(link.href), 1500);
+      } catch (e) {
+        alert("❌ Ошибка при сохранении: " + e.message);
+      }
+    };
+    reader.readAsArrayBuffer(originalFile);
+  };
+</script>
+
+</body>
+</html>
