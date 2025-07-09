@@ -112,7 +112,7 @@
     scale = Math.max(scale - 0.2, 0.4); renderPage(pageNum);
   };
 
-  canvas.addEventListener("click", (e) => {
+ canvas.addEventListener("click", (e) => {
     const rect = canvas.getBoundingClientRect();
     const canvasX = Math.round((e.clientX - rect.left) * canvas.width / rect.width);
     const canvasY = Math.round((e.clientY - rect.top) * canvas.height / rect.height);
@@ -135,8 +135,11 @@
     );
 
     if (indexToRemove !== -1) {
+      console.log(`Удаляем текст: "${textItems[indexToRemove].text}"`);
       textItems.splice(indexToRemove, 1); // Удаляем элемент
       renderPage(pageNum); // Перерисовываем страницу
+    } else {
+      console.log("Текст не найден для удаления.");
     }
   });
   document.getElementById("save-btn").onclick = () => {
