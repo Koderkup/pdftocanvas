@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <title>PDF Unicode Editor — Точный экспорт</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: sans-serif; background: #f2f2f2; text-align: center; padding: 1rem; }
+    canvas { border: 1px solid #ccc; margin: 1rem auto; display: block; cursor: crosshair; }
+    .controls, .editor {
+      margin: 1rem auto;
+      display: flex; flex-wrap: wrap;
+      justify-content: center; gap: 0.5rem; max-width: 800px;
+    }
+    input, button, textarea { font-size: 1rem; padding: 0.5rem; }
+    .status { margin-top: 1rem; font-size: 1rem; color: #333; }
+    button:disabled { background: #ccc; cursor: not-allowed; }
+  </style>
+</head>
+<body>
+
+<h2>📄 PDF Unicode Editor — координаты, как на экране</h2>
+
+<input type="file" id="pdf-file" accept="application/pdf" />
+<button id="load-btn">📂 Загрузить PDF</button>
+
+<canvas id="pdf-canvas"></canvas>
+
+<div class="controls">
+  <button id="prev-page">⬅</button>
+  <button id="next-page">➡</button>
+  <button id="zoom-in">🔍+</button>
+  <button id="zoom-out">🔎-</button>
+  <button id="save-btn" disabled>💾 Сохранить PDF</button>
+</div>
+
+<div class="status">Страница: <span id="page-num">–</span> / <span id="page-count">–</span></div>
+
+<h3>✏️ Введите текст, затем кликните по странице</h3>
+<div class="editor">
+  <textarea id="text-input" placeholder="Привет 😊 أهلاً" rows="3" cols="30"></textarea>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.6.172/pdf.min.js"></script>
+<script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+<script src="https://unpkg.com/@pdf-lib/fontkit@0.0.4/dist/fontkit.umd.js"></script>
+
+<script>
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.6.172/pdf.worker.min.js";
+
+  const canvas = document.getElementById("pdf-canvas");
+  const ctx = canvas.getContext("2d");
+
+  let pdfDoc = null;
+  let originalFile = null;
+  let pageNum = 1;
+  let pageCount = 0;
+  let scale = 1.2;
+  let textItems = [];
+  let currentViewport = null;
+
+  async function renderPage(n) {
+    const page = await pdfDoc.getPage(n);
+    currentViewport = page.getViewport({ scale });
+    canvas.width = currentViewport.width;
+    canvas.height = currentViewport.height;
+    await page.render({ canvasContext: ctx, viewport: currentViewport }).promise;
+
+    document.getElementById("page-num").textContent = n;
+
+    // Предпросмотр текста
+    ctx.font = "16px sans-serif";
+    ctx.fillStyle = "black";
+    ctx.textBaseline = "top";
+
+    textItems.filter(t => t.page === pageNum).forEach(item => {
+      ctx.fillText(item.text, item.canvasX, item.canvasY);
+    });
+  }
+
+  document.getElementById("load-btn").onclick = () => {
+    originalFile = document.getElementById("pdf-file").files[0];
+    if (!originalFile) return alert("⚠️ Выберите PDF-файл.");
+
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const bytes = new Uint8Array(reader.result);
+      pdfDoc = await pdfjsLib.getDocument({ data: bytes }).promise;
+      pageCount = pdfDoc.numPages;
+      pageNum = 1;
+      document.getElementById("page-count").textContent = pageCount;
+      await renderPage(pageNum);
+      document.getElementById("save-btn").disabled = false;
+    };
+    reader.readAsArrayBuffer(originalFile);
+  };
+
+  document.getElementById("prev-page").onclick = () => {
+    if (pageNum > 1) renderPage(--pageNum);
+  };
+
+  document.getElementById("next-page").onclick = () => {
+    if (pageNum < pageCount) renderPage(++pageNum);
+  };
+
+  document.getElementById("zoom-in").onclick = () => {
+    scale = Math.min(scale + 0.2, 3); renderPage(pageNum);
+  };
+
+  document.getElementById("zoom-out").onclick = () => {
+    scale = Math.max(scale - 0.2, 0.4); renderPage(pageNum);
+  };
+
+  canvas.addEventListener("click", (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const canvasX = Math.round((e.clientX - rect.left) * canvas.width / rect.width);
+    const canvasY = Math.round((e.clientY - rect.top) * canvas.height / rect.height);
+    const text = document.getElementById("text-input").value.trim();
+    if (!text) return;
+
+    textItems.push({ text, page: pageNum, canvasX, canvasY });
+    renderPage(pageNum);
+  });
+
+  // Добавляем обработчик для двойного клика
+  canvas.addEventListener("dblclick", (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const canvasX = Math.round((e.clientX - rect.left) * canvas.width / rect.width);
+    const canvasY = Math.round((e.clientY - rect.top) * canvas.height / rect.height);
+
+    // Ищем элемент для удаления
+    const indexToRemove = textItems.findIndex(item => 
+      Math.abs(item.canvasX - canvasX) < 10 && Math.abs(item.canvasY - canvasY) < 10 && item.page === pageNum
+    );
+
+    if (indexToRemove !== -1) {
+      textItems.splice(indexToRemove, 1); // Удаляем элемент
+      renderPage(pageNum); // Перерисовываем страницу
+    }
+  });
+  document.getElementById("save-btn").onclick = () => {
+    if (!originalFile) return alert("📛 PDF не загружен.");
+    if (textItems.length === 0) return alert("ℹ️ Нет добавленного текста.");
+
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        const pdfBytes = new Uint8Array(reader.result);
+        const doc = await PDFLib.PDFDocument.load(pdfBytes);
+        doc.registerFontkit(fontkit);
+
+        const fontBytes = await fetch("https://cdn.jsdelivr.net/npm/dejavu-fonts-ttf@2.37/ttf/DejaVuSans.ttf")
+          .then(res => res.arrayBuffer());
+
+        if (!fontBytes || fontBytes.byteLength === 0) throw new Error("Шрифт не загружен");
+        const customFont = await doc.embedFont(fontBytes);
+        const pages = doc.getPages();
+
+        for (const item of textItems) {
+          const page = pages[item.page - 1];
+          const pdfWidth = page.getSize().width;
+          const pdfHeight = page.getSize().height;
+
+          // масштабные коэффициенты
+          const scaleX = pdfWidth / canvas.width;
+          const scaleY = pdfHeight / canvas.height;
+
+          const pdfX = item.canvasX * scaleX;
+          const pdfY = pdfHeight - item.canvasY * scaleY;
+
+          page.drawText(item.text, {
+            x: pdfX,
+            y: pdfY,
+            font: customFont,
+            size: 16,
+            color: PDFLib.rgb(0, 0, 0)
+          });
+        }
+
+        const output = await doc.save();
+        const blob = new Blob([output], { type: 'application/pdf' });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = "unicode_texts_precise.pdf";
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(link.href), 1500);
+      } catch (e) {
+        alert("❌ Ошибка при сохранении: " + e.message);
+      }
+    };
+    reader.readAsArrayBuffer(originalFile);
+  };
+</script>
+
+</body>
+</html>
