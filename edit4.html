@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Загрузка файла по URL</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        
+        .container {
+            background-color: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .input-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #34495e;
+        }
+        
+        input[type="url"] {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+            box-sizing: border-box;
+        }
+        
+        button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            font-size: 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            width: 100%;
+            transition: background-color 0.3s;
+        }
+        
+        button:hover {
+            background-color: #2980b9;
+        }
+        
+        #status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 4px;
+            display: none;
+        }
+        
+        .success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .progress-container {
+            width: 100%;
+            background-color: #f1f1f1;
+            border-radius: 4px;
+            margin-top: 20px;
+            display: none;
+        }
+        
+        #progressBar {
+            width: 0%;
+            height: 30px;
+            background-color: #4CAF50;
+            border-radius: 4px;
+            text-align: center;
+            line-height: 30px;
+            color: white;
+        }
+        
+        .file-info {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #e7f5fe;
+            border-radius: 4px;
+            border: 1px solid #bee1fa;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Загрузка файла по URL</h1>
+        
+        <div class="input-group">
+            <label for="fileUrl">URL файла:</label>
+            <input type="url" id="fileUrl" placeholder="https://example.com/file.pdf" required>
+        </div>
+        
+        <div class="input-group">
+            <label for="fileName">Имя файла (необязательно):</label>
+            <input type="text" id="fileName" placeholder="myfile.pdf">
+        </div>
+        
+        <button id="downloadBtn">Загрузить файл</button>
+        
+        <div class="progress-container" id="progressContainer">
+            <div id="progressBar">0%</div>
+        </div>
+        
+        <div id="status"></div>
+        
+        <div class="file-info" id="fileInfo">
+            <h3>Информация о файле:</h3>
+            <p><strong>Имя файла:</strong> <span id="infoName"></span></p>
+            <p><strong>Размер:</strong> <span id="infoSize"></span></p>
+            <p><strong>Тип:</strong> <span id="infoType"></span></p>
+            <a id="downloadLink" href="#" download>Скачать файл</a>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('downloadBtn').addEventListener('click', function() {
+            const fileUrl = document.getElementById('fileUrl').value.trim();
+            const customFileName = document.getElementById('fileName').value.trim();
+            
+            if (!fileUrl) {
+                showMessage('Пожалуйста, введите URL файла', false);
+                return;
+            }
+            
+            downloadFile(fileUrl, customFileName);
+        });
+        
+        function downloadFile(url, customFileName) {
+            const statusElement = document.getElementById('status');
+            const progressContainer = document.getElementById('progressContainer');
+            const progressBar = document.getElementById('progressBar');
+            const fileInfoElement = document.getElementById('fileInfo');
+            
+            // Скрываем предыдущие сообщения и показываем прогресс
+            statusElement.style.display = 'none';
+            fileInfoElement.style.display = 'none';
+            progressContainer.style.display = 'block';
+            progressBar.style.width = '0%';
+            progressBar.textContent = '0%';
+            
+            fetch(url)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`Ошибка HTTP: ${response.status}`);
+                    }
+                    
+                    // Получаем имя файла из URL или заголовков Content-Disposition
+                    let fileName = customFileName || getFileNameFromUrl(url);
+                    const contentDisposition = response.headers.get('Content-Disposition');
+                    
+                    if (contentDisposition && !customFileName) {
+                        const fileNameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+                        if (fileNameMatch && fileNameMatch[1]) {
+                            fileName = fileNameMatch[1].replace(/['"]/g, '');
+                        }
+                    }
+                    
+                    const contentLength = response.headers.get('Content-Length');
+                    const contentType = response.headers.get('Content-Type') || 'application/octet-stream';
+                    
+                    // Отображаем информацию о файле
+                    document.getElementById('infoName').textContent = fileName;
+                    document.getElementById('infoSize').textContent = contentLength ? formatFileSize(contentLength) : 'неизвестно';
+                    document.getElementById('infoType').textContent = contentType;
+                    
+                    const reader = response.body.getReader();
+                    const contentLength = contentLength ? parseInt(contentLength) : null;
+                    let receivedLength = 0;
+                    const chunks = [];
+                    
+                    return new Promise((resolve, reject) => {
+                        function pump() {
+                            return reader.read().then(({done, value}) => {
+                                if (done) {
+                                    resolve({
+                                        fileName,
+                                        contentType,
+                                        content: new Blob(chunks, {type: contentType}),
+                                        size: receivedLength
+                                    });
+                                    return;
+                                }
+                                
+                                chunks.push(value);
+                                receivedLength += value.length;
+                                
+                                if (contentLength) {
+                                    const percentComplete = Math.round((receivedLength / contentLength) * 100);
+                                    progressBar.style.width = `${percentComplete}%`;
+                                    progressBar.textContent = `${percentComplete}%`;
+                                } else {
+                                    // Если размер файла неизвестен, просто показываем индикатор активности
+                                    const dots = (Math.floor(Date.now() / 500) % 4);
+                                    progressBar.textContent = `Загрузка${'.'.repeat(dots)}`;
+                                }
+                                
+                                return pump();
+                            }).catch(reject);
+                        }
+                        
+                        return pump();
+                    });
+                })
+                .then(fileData => {
+                    progressContainer.style.display = 'none';
+                    
+                    // Создаем ссылку для скачивания
+                    const downloadLink = document.getElementById('downloadLink');
+                    const fileUrl = URL.createObjectURL(fileData.content);
+                    downloadLink.href = fileUrl;
+                    downloadLink.download = fileData.fileName;
+                    downloadLink.textContent = `Скачать ${fileData.fileName}`;
+                    
+                    // Освобождаем память при закрытии страницы
+                    window.onbeforeunload = () => {
+                        URL.revokeObjectURL(fileUrl);
+                    };
+                    
+                    // Показываем информацию о файле
+                    document.getElementById('infoSize').textContent = formatFileSize(fileData.size);
+                    fileInfoElement.style.display = 'block';
+                    
+                    showMessage('Файл успешно загружен!', true);
+                })
+                .catch(error => {
+                    progressContainer.style.display = 'none';
+                    showMessage(`Ошибка загрузки: ${error.message}`, false);
+                    console.error('Ошибка загрузки:', error);
+                });
+        }
+        
+        function getFileNameFromUrl(url) {
+            const path = new URL(url, window.location.href).pathname;
+            return path.split('/').pop() || 'file';
+        }
+        
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+        
+        function showMessage(message, isSuccess) {
+            const statusElement = document.getElementById('status');
+            statusElement.textContent = message;
+            statusElement.className = isSuccess ? 'success' : 'error';
+            statusElement.style.display = 'block';
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <title>PDF Pro Viewer (автозагрузка по ссылке)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    body { font-family: sans-serif; background: #f4f4f4; text-align: center; padding: 1rem; }
+    canvas { border: 1px solid #ccc; max-width: 90vw; margin-top: 1rem; }
+    .controls { margin: 1rem 0; display: flex; flex-wrap: wrap; gap: 0.5rem; justify-content: center; }
+    input, button { padding: 0.5rem; font-size: 1rem; }
+    .status, #search-result { margin-top: 0.5rem; font-size: 1rem; color: green; }
+  </style>
+</head>
+<body>
+  <h2>📚 PDF PRO Просмотрщик</h2>
+
+  <input type="text" id="pdf-url" placeholder="Вставь ссылку на PDF (GitHub или Drive)" size="50" />
+  <button onclick="loadFromURL()">Загрузить PDF</button>
+  <button onclick="clearStoredURL()">🗑 Очистить сохранённую ссылку</button>
+
+  <div class="controls">
+    <button onclick="goToPage(currentPage - 1)">⬅ Назад</button>
+    <button onclick="goToPage(currentPage + 1)">Вперёд ➡</button>
+    <input type="number" id="page-input" min="1" placeholder="Страница" />
+    <button onclick="jumpToPage()">Перейти</button>
+    <button onclick="zoomIn()">🔍+</button>
+    <button onclick="zoomOut()">🔎-</button>
+    <button onclick="downloadImage()">💾 PNG</button>
+  </div>
+
+  <div class="status">Страница: <span id="current-page">–</span> / <span id="total-pages">–</span></div>
+
+  <input type="text" id="search-text" placeholder="Поиск по тексту" />
+  <button onclick="searchText()">🔎 Поиск</button>
+  <div id="search-result"></div>
+
+  <canvas id="pdf-canvas"></canvas>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.6.172/pdf.min.js"></script>
+  <script>
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.6.172/pdf.worker.min.js";
+
+    const canvas = document.getElementById("pdf-canvas");
+    const ctx = canvas.getContext("2d");
+    let pdfDoc = null;
+    let currentPage = 1;
+    let totalPages = 0;
+    let scale = 1.2;
+
+    const currentPageEl = document.getElementById("current-page");
+    const totalPagesEl = document.getElementById("total-pages");
+    const pageInput = document.getElementById("page-input");
+    const searchResultEl = document.getElementById("search-result");
+
+    function convertGitHubBlobToRaw(url) {
+      const m = url.match(/^https:\/\/github\.com\/([^\/]+)\/([^\/]+)\/blob\/([^\/]+)\/(.+)$/);
+      if (!m) return url;
+      const [, user, repo, branch, path] = m;
+      return `https://raw.githubusercontent.com/${user}/${repo}/${branch}/${path}`;
+    }
+
+    async function loadFromURL() {
+      let url = document.getElementById("pdf-url").value.trim();
+      if (!url) return alert("❗ Укажи ссылку на PDF");
+
+      const driveMatch = url.match(/\/d\/(.+?)\//);
+      if (driveMatch) {
+        url = `https://drive.google.com/uc?export=download&id=${driveMatch[1]}`;
+      }
+
+      url = convertGitHubBlobToRaw(url);
+      localStorage.setItem("lastPDFUrl", url); // ✅ Сохраняем ссылку
+
+      try {
+        const res = await fetch(url);
+        const buffer = await res.arrayBuffer();
+        const bytes = new Uint8Array(buffer);
+        const doc = await pdfjsLib.getDocument(bytes).promise;
+        pdfDoc = doc;
+        totalPages = doc.numPages;
+        totalPagesEl.textContent = totalPages;
+        goToPage(1);
+      } catch (e) {
+        alert("❌ Не удалось загрузить PDF");
+        console.error(e);
+      }
+    }
+
+    async function goToPage(num) {
+      if (!pdfDoc || num < 1 || num > totalPages) return;
+      currentPage = num;
+      currentPageEl.textContent = currentPage;
+      const page = await pdfDoc.getPage(num);
+      const viewport = page.getViewport({ scale });
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      await page.render({ canvasContext: ctx, viewport }).promise;
+    }
+
+    function jumpToPage() {
+      const target = parseInt(pageInput.value);
+      if (!isNaN(target)) goToPage(target);
+    }
+
+    function zoomIn() {
+      scale = Math.min(scale + 0.2, 3);
+      goToPage(currentPage);
+    }
+
+    function zoomOut() {
+      scale = Math.max(scale - 0.2, 0.4);
+      goToPage(currentPage);
+    }
+
+    function downloadImage() {
+      const link = document.createElement("a");
+      link.download = `page-${currentPage}.png`;
+      link.href = canvas.toDataURL();
+      link.click();
+    }
+
+    async function searchText() {
+      if (!pdfDoc) return;
+      const query = document.getElementById("search-text").value.trim().toLowerCase();
+      if (!query) return;
+      const page = await pdfDoc.getPage(currentPage);
+      const content = await page.getTextContent();
+      const text = content.items.map(i => i.str).join(" ").toLowerCase();
+      searchResultEl.textContent = text.includes(query)
+        ? `✅ Найдено на странице ${currentPage}`
+        : `❌ Не найдено`;
+    }
+
+    function clearStoredURL() {
+      localStorage.removeItem("lastPDFUrl");
+      alert("🗑 Сохранённая ссылка удалена");
+    }
+
+    window.addEventListener("DOMContentLoaded", () => {
+      const url = localStorage.getItem("lastPDFUrl");
+      if (url) {
+        document.getElementById("pdf-url").value = url;
+        loadFromURL();
+      }
+    });
+  </script>
+</body>
+</html>
