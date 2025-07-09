@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <title>PDF Editor — Редактирование PDF</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    body { font-family: sans-serif; background: #f4f4f4; text-align: center; padding: 1rem; }
+    canvas { border: 1px solid #ccc; max-width: 90vw; margin-top: 1rem; }
+    .controls { margin: 1rem 0; display: flex; flex-wrap: wrap; gap: 0.5rem; justify-content: center; }
+    input, button, textarea { padding: 0.5rem; font-size: 1rem; margin-top: 0.3rem; }
+    .status { margin-top: 0.5rem; font-size: 1rem; color: green; }
+  </style>
+</head>
+<body>
+  <h2>📚 PDF Editor в браузере</h2>
+
+  <input type="file" id="local-pdf" accept="application/pdf" />
+  <button onclick="loadLocalPDF()">📂 Открыть PDF</button>
+
+  <div class="controls">
+    <button onclick="goToPage(currentPage - 1)">⬅ Назад</button>
+    <button onclick="goToPage(currentPage + 1)">➡ Вперёд</button>
+    <input type="number" id="page-input" min="1" placeholder="Страница" />
+    <button onclick="jumpToPage()">Перейти</button>
+    <button onclick="zoomIn()">🔍+</button>
+    <button onclick="zoomOut()">🔎-</button>
+  </div>
+
+  <div class="status">Страница: <span id="current-page">–</span> / <span id="total-pages">–</span></div>
+  <canvas id="pdf-canvas"></canvas>
+
+  <h3>✏️ Добавить текст в PDF</h3>
+  <textarea id="custom-text" placeholder="Введите текст" rows="3" cols="40"></textarea><br />
+  <input type="number" id="target-page" placeholder="Страница" min="1" />
+  <input type="number" id="pos-x" placeholder="X позиция" min="0" />
+  <input type="number" id="pos-y" placeholder="Y позиция" min="0" />
+  <button onclick="addCustomTextToPDF()">💾 Сохранить PDF с текстом</button>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.6.172/pdf.min.js"></script>
+  <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+  <script>
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.6.172/pdf.worker.min.js";
+
+    const canvas = document.getElementById("pdf-canvas");
+    const ctx = canvas.getContext("2d");
+    let pdfDoc = null;
+    let currentPage = 1;
+    let totalPages = 0;
+    let scale = 1.2;
+    let loadedPdfBytes = null;
+
+    async function loadLocalPDF() {
+      const file = document.getElementById("local-pdf").files[0];
+      if (!file) return alert("📂 Выберите PDF-файл");
+
+      const buffer = await file.arrayBuffer();
+      loadedPdfBytes = new Uint8Array(buffer);
+      console.log("✅ PDF загружен:", loadedPdfBytes.length, "байт");
+
+      const doc = await pdfjsLib.getDocument(loadedPdfBytes).promise;
+      pdfDoc = doc;
+      totalPages = doc.numPages;
+      document.getElementById("total-pages").textContent = totalPages;
+      goToPage(1);
+    }
+
+    async function goToPage(n) {
+      if (!pdfDoc || n < 1 || n > totalPages) return;
+      currentPage = n;
+      document.getElementById("current-page").textContent = currentPage;
+      const page = await pdfDoc.getPage(currentPage);
+      const viewport = page.getViewport({ scale });
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      await page.render({ canvasContext: ctx, viewport }).promise;
+    }
+
+    function jumpToPage() {
+      const p = parseInt(document.getElementById("page-input").value);
+      if (!isNaN(p)) goToPage(p);
+    }
+
+    function zoomIn() {
+      scale = Math.min(scale + 0.2, 3);
+      goToPage(currentPage);
+    }
+
+    function zoomOut() {
+      scale = Math.max(scale - 0.2, 0.4);
+      goToPage(currentPage);
+    }
+
+    async function addCustomTextToPDF() {
+      if (!loadedPdfBytes || loadedPdfBytes.length === 0) {
+        alert("⚠️ PDF не загружен — редактирование невозможно");
+        return;
+      }
+
+      const { PDFDocument, StandardFonts, rgb } = PDFLib;
+      const inputText = document.getElementById("custom-text").value.trim();
+      const pageNum = parseInt(document.getElementById("target-page").value);
+      const posX = parseInt(document.getElementById("pos-x").value);
+      const posY = parseInt(document.getElementById("pos-y").value);
+
+      if (!inputText || isNaN(pageNum) || isNaN(posX) || isNaN(posY)) {
+        alert("⚠️ Заполните все поля корректно");
+        return;
+      }
+
+      const pdfDoc = await PDFDocument.load(loadedPdfBytes);
+      const pages = pdfDoc.getPages();
+      if (pageNum < 1 || pageNum > pages.length) {
+        alert(`❌ В PDF всего ${pages.length} страниц`);
+        return;
+      }
+
+      const selectedPage = pages[pageNum - 1];
+      const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+      selectedPage.drawText(inputText, {
+        x: posX,
+        y: posY,
+        size: 18,
+        font,
+        color: rgb(0, 0, 0),
+      });
+
+      const modifiedBytes = await pdfDoc.save();
+      const blob = new Blob([modifiedBytes], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = "edited.pdf";
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+  </script>
+</body>
+</html>
