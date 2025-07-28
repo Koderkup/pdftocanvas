@@ -1,52 +1,80 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8" />
-  <title>PDF Unicode Editor — Точный экспорт</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <style>
-    body { font-family: sans-serif; background: #f2f2f2; text-align: center; padding: 1rem; }
-    canvas { border: 1px solid #ccc; margin: 1rem auto; display: block; cursor: crosshair; }
-    .controls, .editor {
-      margin: 1rem auto;
-      display: flex; flex-wrap: wrap;
-      justify-content: center; gap: 0.5rem; max-width: 800px;
-    }
-    input, button, textarea { font-size: 1rem; padding: 0.5rem; }
-    .status { margin-top: 1rem; font-size: 1rem; color: #333; }
-    button:disabled { background: #ccc; cursor: not-allowed; }
-  </style>
+    <meta charset="UTF-8" />
+    <title>PDF Unicode Editor — Точный экспорт</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+        body {
+            font-family: sans-serif;
+            background: #f2f2f2;
+            text-align: center;
+            padding: 1rem;
+        }
+
+        canvas {
+            border: 1px solid #ccc;
+            margin: 1rem auto;
+            display: block;
+            cursor: crosshair;
+        }
+
+        .controls, .editor {
+            margin: 1rem auto;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 0.5rem;
+            max-width: 800px;
+        }
+
+        input, button, textarea {
+            font-size: 1rem;
+            padding: 0.5rem;
+        }
+
+        .status {
+            margin-top: 1rem;
+            font-size: 1rem;
+            color: #333;
+        }
+
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+    </style>
 </head>
 <body>
 
-<h2>📄 PDF Unicode Editor — координаты, как на экране</h2>
+    <h2>📄 PDF Unicode Editor — координаты, как на экране</h2>
 
-<input type="file" id="pdf-file" accept="application/pdf" />
-<button id="load-btn">📂 Загрузить PDF</button>
+    <input type="file" id="pdf-file" accept="application/pdf" />
+    <button id="load-btn">📂 Загрузить PDF</button>
 
-<canvas id="pdf-canvas"></canvas>
+    <canvas id="pdf-canvas"></canvas>
 
-<div class="controls">
-  <button id="prev-page">⬅</button>
-  <button id="next-page">➡</button>
-  <button id="zoom-in">🔍+</button>
-  <button id="zoom-out">🔎-</button>
-  <button id="save-btn" disabled>💾 Сохранить PDF</button>
-</div>
+    <div class="controls">
+        <button id="prev-page">⬅</button>
+        <button id="next-page">➡</button>
+        <button id="zoom-in">🔍+</button>
+        <button id="zoom-out">🔎-</button>
+        <button id="save-btn" disabled>💾 Сохранить PDF</button>
+    </div>
 
-<div class="status">Страница: <span id="page-num">–</span> / <span id="page-count">–</span></div>
+    <div class="status">Страница: <span id="page-num">–</span> / <span id="page-count">–</span></div>
 
-<h3>✏️ Введите текст, затем кликните по странице</h3>
-<div class="editor">
-  <textarea id="text-input" placeholder="Привет 😊 أهلاً" rows="3" cols="30"></textarea>
-</div>
-<button id="clear-cache">🧹 Очистить кэш</button>
+    <h3>✏️ Введите текст, затем кликните по странице</h3>
+    <div class="editor">
+        <textarea id="text-input" placeholder="Привет 😊 أهلاً" rows="3" cols="30"></textarea>
+    </div>
+    <button id="clear-cache">🧹 Очистить кэш</button>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.6.172/pdf.min.js"></script>
-<script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
-<script src="https://unpkg.com/@pdf-lib/fontkit@0.0.4/dist/fontkit.umd.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.6.172/pdf.min.js"></script>
+    <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+    <script src="https://unpkg.com/@pdf-lib/fontkit@0.0.4/dist/fontkit.umd.js"></script>
 
-<script>
+    <script>
   pdfjsLib.GlobalWorkerOptions.workerSrc =
     "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.6.172/pdf.worker.min.js";
 let isRendering = false;
@@ -299,9 +327,13 @@ canvas.addEventListener("click", (e) => {
     const canvasY = Math.round((e.clientY - rect.top) * canvas.height / rect.height);
 
     // Ищем элемент для удаления
-    const indexToRemove = textItems.findIndex(item => 
-      Math.abs(item.canvasX - canvasX) < 10 && Math.abs(item.canvasY - canvasY) < 10 && item.page === pageNum
-    );
+    const indexToRemove = textItems.findIndex(item => {
+  const absX = item.relativeX * canvas.width;
+  const absY = item.relativeY * canvas.height;
+  return Math.abs(absX - canvasX) < 10 &&
+         Math.abs(absY - canvasY) < 10 &&
+         item.page === pageNum;
+});
 
     if (indexToRemove !== -1) {
       console.log(`Удаляем текст: "${textItems[indexToRemove].text}"`);
@@ -324,22 +356,27 @@ canvas.addEventListener("mousedown", (e) => {
 
   textItems.forEach(item => {
     if (item.page !== pageNum) return;
+
     const metrics = ctx.measureText(item.text);
     const w = metrics.width;
-    const h = 20; // приблизительная высота строки
+    const h = 20; // высота строки (приблизительно)
 
-    if (x >= item.canvasX && x <= item.canvasX + w &&
-        y >= item.canvasY && y <= item.canvasY + h) {
+    const itemX = item.relativeX * canvas.width;
+    const itemY = item.relativeY * canvas.height;
+
+    if (x >= itemX && x <= itemX + w &&
+        y >= itemY && y <= itemY + h) {
       draggingItem = item;
-      dragOffsetX = x - item.canvasX;
-      dragOffsetY = y - item.canvasY;
-      if (navigator.vibrate) {
-  navigator.vibrate(50); // 🔔 вибрация 50 мс
-}
+      dragOffsetX = x - itemX;
+      dragOffsetY = y - itemY;
 
+      if (navigator.vibrate) {
+        navigator.vibrate(50); // 🔔 вибрация 50 мс
+      }
     }
   });
 });
+
 
 canvas.addEventListener("mousemove", (e) => {
   if (!draggingItem) return;
@@ -348,10 +385,11 @@ canvas.addEventListener("mousemove", (e) => {
   const x = (e.clientX - rect.left) * canvas.width / rect.width;
   const y = (e.clientY - rect.top) * canvas.height / rect.height;
 
-  draggingItem.canvasX = x - dragOffsetX;
-  draggingItem.canvasY = y - dragOffsetY;
+  draggingItem.relativeX = (x - dragOffsetX) / canvas.width;
+  draggingItem.relativeY = (y - dragOffsetY) / canvas.height;
+
   localStorage.setItem("textItems", JSON.stringify(textItems));
-  
+
 });
 
 canvas.addEventListener("mouseup", () => {
@@ -391,8 +429,9 @@ document.getElementById("save-btn").onclick = async () => {
 
       const scaleX = pdfWidth / canvas.width;
       const scaleY = pdfHeight / canvas.height;
-      let pdfX = item.canvasX * scaleX;
-      let pdfY = pdfHeight - item.canvasY * scaleY;
+
+      let pdfX = item.relativeX * pdfWidth;
+      let pdfY = pdfHeight - item.relativeY * pdfHeight;
 
       const lineHeight = 16;
       const maxWidth = 300;
@@ -456,22 +495,28 @@ canvas.addEventListener("touchstart", (e) => {
 
   textItems.forEach(item => {
     if (item.page !== pageNum) return;
+
     const metrics = ctx.measureText(item.text);
     const w = metrics.width;
-    const h = 20;
+    const h = 20; // высота строки
 
-    if (x >= item.canvasX && x <= item.canvasX + w &&
-        y >= item.canvasY && y <= item.canvasY + h) {
+    const itemX = item.relativeX * canvas.width;
+    const itemY = item.relativeY * canvas.height;
+
+    if (x >= itemX && x <= itemX + w &&
+        y >= itemY && y <= itemY + h) {
       draggingItem = item;
-      dragOffsetX = x - item.canvasX;
-      dragOffsetY = y - item.canvasY;
+      dragOffsetX = x - itemX;
+      dragOffsetY = y - itemY;
       if (navigator.vibrate) {
-  navigator.vibrate(50); // 🔔 вибрация 50 мс
-}
-
+        navigator.vibrate(50); // 🔔 вибрация 50 мс
+      }
     }
   });
 });
+
+
+
 canvas.addEventListener("touchmove", (e) => {
   if (!draggingItem) return;
   e.preventDefault();
@@ -481,10 +526,10 @@ canvas.addEventListener("touchmove", (e) => {
   const x = (touch.clientX - rect.left) * canvas.width / rect.width;
   const y = (touch.clientY - rect.top) * canvas.height / rect.height;
 
-  draggingItem.canvasX = x - dragOffsetX;
-  draggingItem.canvasY = y - dragOffsetY;
+ draggingItem.relativeX = (x - dragOffsetX) / canvas.width;
+ draggingItem.relativeY = (y - dragOffsetY) / canvas.height;
 
-  
+
   localStorage.setItem("textItems", JSON.stringify(textItems));
 });
 canvas.addEventListener("touchend", () => {
@@ -495,7 +540,7 @@ canvas.addEventListener("touchend", () => {
 });
 
 
-</script>
+    </script>
 
 </body>
 </html>
