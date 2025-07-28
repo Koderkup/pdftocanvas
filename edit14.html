@@ -192,9 +192,16 @@ async function loadPDFFromDB(key) {
   ctx.fillStyle = "black";
   ctx.textBaseline = "top";
 
-  textItems.filter(t => t.page === pageNum).forEach(item => {
-    wrapText(ctx, item.text, item.canvasX, item.canvasY, 300, 20);
+  textItems
+  .filter(t => t.page === pageNum)
+  .forEach(item => {
+    // Переводим относительные координаты в абсолютные
+    const x = item.relativeX * canvas.width;
+    const y = item.relativeY * canvas.height;
+
+    wrapText(ctx, item.text, x, y, 300, 20);
   });
+
 
   isRendering = false;
 }
@@ -268,16 +275,20 @@ async function loadPDFFromDB(key) {
   };
 
 canvas.addEventListener("click", (e) => {
-    const rect = canvas.getBoundingClientRect();
-    const canvasX = Math.round((e.clientX - rect.left) * canvas.width / rect.width);
-    const canvasY = Math.round((e.clientY - rect.top) * canvas.height / rect.height);
-    const text = document.getElementById("text-input").value.trim();
-    if (!text) return;
+  const rect = canvas.getBoundingClientRect();
+  const canvasX = Math.round((e.clientX - rect.left) * canvas.width / rect.width);
+  const canvasY = Math.round((e.clientY - rect.top) * canvas.height / rect.height);
 
-    textItems.push({ text, page: pageNum, canvasX, canvasY });
-    localStorage.setItem("textItems", JSON.stringify(textItems));
-    renderPage(pageNum);
-  });
+  const relativeX = canvasX / canvas.width;
+  const relativeY = canvasY / canvas.height;
+
+  const text = document.getElementById("text-input").value.trim();
+  if (!text) return;
+
+  textItems.push({ text, page: pageNum, relativeX, relativeY });
+  localStorage.setItem("textItems", JSON.stringify(textItems));
+  renderPage(pageNum);
+});
 
   // Добавляем обработчик для долгого нажатия
   canvas.addEventListener("contextmenu", (e) => {
